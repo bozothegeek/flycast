@@ -1753,12 +1753,14 @@ protected:
 	virtual const char *get_id() override { return "namco ltd.;JYU-PCB;Ver1.00;JPN,2Coins 2Guns"; }
 	virtual u32 remap_buttons(u32 keycode)
 	{
-	   // Swap button 1 and 4
+	   INFO_LOG(MAPLE, "keycode value %d", keycode);
+       // Swap button 1 and 4
 	   u16 mapped = keycode | NAOMI_BTN1_KEY | NAOMI_BTN4_KEY;
 	   if (!(keycode & NAOMI_BTN1_KEY))
 		  mapped &= ~NAOMI_BTN4_KEY;
 	   if (!(keycode & NAOMI_BTN4_KEY))
 		  mapped &= ~NAOMI_BTN1_KEY;
+       INFO_LOG(MAPLE, "mapped value %d", mapped);
 	   return mapped;
 	}
 };
