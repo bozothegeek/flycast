@@ -865,7 +865,7 @@ void DrawGunCrosshair(u8 port)
 	glcache.Disable(GL_STENCIL_TEST);
 	glcache.Disable(GL_CULL_FACE);
 	glcache.Enable(GL_BLEND);
-	glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE);
+	glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	SetupMainVBO();
 	PipelineShader *shader = GetProgram(0, false, 1, 1, 0, 0, 0, 2, false, false, false, false, false);
