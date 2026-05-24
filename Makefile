@@ -4,7 +4,7 @@ DEBUG_UBSAN   := 0
 NO_REND       := 0
 HAVE_GL       := 1
 HAVE_GL2      := 0
-HAVE_OIT      := 0
+HAVE_OIT      ?= 0
 HAVE_VULKAN   := 0
 HAVE_CORE     := 0
 NO_THREADS    := 0
@@ -21,7 +21,7 @@ HAVE_OPENMP   := 1
 HAVE_CHD      := 1
 HAVE_CLANG    ?= 0
 HAVE_CDROM    := 0
-HAVE_MODEM    := 1
+ENABLE_MODEM  := 1
 
 TARGET_NAME   := flycast
 
@@ -38,6 +38,9 @@ ifeq ($(HAVE_LTCG),1)
 	SHARED   += -flto
 endif
 
+ifneq (${AS},)
+	CC_AS := ${AS}
+endif
 CC_AS    ?= ${CC_PREFIX}as
 
 MFLAGS   := 
@@ -171,13 +174,16 @@ else ifneq (,$(findstring rpi,$(platform)))
 	
 	ifneq (,$(findstring rpi4,$(platform)))
 		FORCE_GLES = 1
+		# The Pi4 has mature Vulkan support when using up-to-date MESA.
+		HAVE_VULKAN = 1
 		ifneq (,$(findstring rpi4_64,$(platform)))
 			# 64-bit userspace
 			ARM_FLOAT_ABI_HARD = 0
 			CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 			CFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -mtune=cortex-a72 $(CPUFLAGS)
 			CXXFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -mtune=cortex-a72 $(CPUFLAGS)
-			ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
+			# Look at GNU assembler man pages for actual aarch64 parameters, don't make them up.
+			ASFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -c
 			WITH_DYNAREC=arm64
 		else
 			# rpi4 flags are taken from rockpro64
@@ -192,6 +198,20 @@ else ifneq (,$(findstring rpi,$(platform)))
 			endif
 			ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 		endif
+	else ifneq (,$(findstring rpi3,$(platform)))
+			FORCE_GLES = 1
+			ifneq (,$(findstring rpi3_64,$(platform)))
+				# 64-bit userspace
+				ARM_FLOAT_ABI_HARD = 0
+				CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
+				CFLAGS += -march=armv8-a+crc -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
+				CXXFLAGS += -march=armv8-a+crc -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
+				ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
+				WITH_DYNAREC=arm64
+			else
+				CFLAGS += -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
+				CXXFLAGS += -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
+			endif
 	else
 		ifeq (,$(findstring mesa,$(platform)))
 			GLES = 1
@@ -204,9 +224,6 @@ else ifneq (,$(findstring rpi,$(platform)))
 		ifneq (,$(findstring rpi2,$(platform)))
 			CFLAGS += -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 			CXXFLAGS += -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
-		else ifneq (,$(findstring rpi3,$(platform)))
-			CFLAGS += -march=armv8-a+crc -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
-			CXXFLAGS += -march=armv8-a+crc -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
 		endif
 		CORE_DEFINES += -DLOW_END
 	endif
@@ -226,7 +243,7 @@ else ifeq ($(platform), classic_armv7_a7)
 	FORCE_GLES = 1
 	SINGLE_PREC_FLAGS = 1
 	HAVE_LTCG = 0
-	HAVE_OPENMP = 0
+	HAVE_OPENMP = 1
 	CFLAGS += -Ofast \
 	-flto=4 -fwhole-program -fuse-linker-plugin \
 	-fdata-sections -ffunction-sections -Wl,--gc-sections \
@@ -362,6 +379,53 @@ else ifeq ($(platform), sun8i_legacy)
 	
 #######################################
 
+# Generic AArch64 Cortex-A53 OpenGL ES 2.0 target
+else ifeq ($(platform), arm64_cortex_a53_gles2)
+	EXT ?= so
+	TARGET := $(TARGET_NAME)_libretro.$(EXT)
+	SHARED += -shared -Wl,--version-script=link.T
+	LDFLAGS +=  -Wl,--no-undefined
+	fpic = -fPIC
+	LIBS += -lrt
+	ARM_FLOAT_ABI_HARD = 0
+	FORCE_GLES = 1
+	SINGLE_PREC_FLAGS = 1
+	CPUFLAGS += -DHOST_CPU=0x20000006 -DTARGET_LINUX_ARMv8 -frename-registers
+	CFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
+	CXXFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
+	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
+	PLATFORM_EXT := unix
+	WITH_DYNAREC=arm64
+	HAVE_GENERIC_JIT = 0
+	HAVE_VULKAN = 0
+	HAVE_LTCG = 0
+	CORE_DEFINES += -DLOW_END
+
+#######################################
+
+# ARM64 SM1 Odroid C4
+else ifeq ($(platform), odroidc4)
+	EXT ?= so
+	TARGET := $(TARGET_NAME)_libretro.$(EXT)
+	SHARED += -shared -Wl,--version-script=link.T
+	LDFLAGS +=  -Wl,--no-undefined
+	fpic = -fPIC
+	LIBS += -lrt
+	ARM_FLOAT_ABI_HARD = 0
+	FORCE_GLES = 1
+	SINGLE_PREC_FLAGS = 1
+	CPUFLAGS += -DHOST_CPU=0x20000006 -DTARGET_LINUX_ARMv8 -frename-registers
+	CFLAGS += -mcpu=cortex-a55 -mtune=cortex-a55 $(CPUFLAGS)
+	CXXFLAGS += -mcpu=cortex-a55 -mtune=cortex-a55 $(CPUFLAGS)
+	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
+	PLATFORM_EXT := unix
+	WITH_DYNAREC=arm64
+	HAVE_GENERIC_JIT = 0
+	HAVE_VULKAN = 0
+	HAVE_LTCG = 0
+
+#######################################
+
 # ARM64 (switch-lakka)
 else ifeq ($(platform), arm64)
 	EXT ?= so
@@ -422,7 +486,7 @@ else ifeq ($(platform), libnx)
    WITH_DYNAREC=arm64
    HAVE_GENERIC_JIT = 0
    STATIC_LINKING = 1
-   HAVE_MODEM = 1
+   ENABLE_MODEM = 0
    HAVE_LTCG = 0
    NO_NVMEM = 1
    # stubs
@@ -444,6 +508,24 @@ else ifeq ($(platform), odroid-n2)
 	CFLAGS += -mcpu=cortex-a73 -mtune=cortex-a73.cortex-a53 $(CPUFLAGS)
 	CXXFLAGS += -mcpu=cortex-a73 -mtune=cortex-a73.cortex-a53 $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
+	PLATFORM_EXT := unix
+	WITH_DYNAREC=arm64
+	HAVE_GENERIC_JIT = 0
+	HAVE_LTCG = 0
+	
+	# Libre Computer La Frite
+else ifeq ($(platform), mali-drm-gles2)
+	EXT ?= so
+	TARGET := $(TARGET_NAME)_libretro.$(EXT)
+	SHARED += -shared -Wl,--version-script=link.T
+	LDFLAGS +=  -Wl,--no-undefined
+	fpic = -fPIC
+	LIBS += -lrt
+	ARM_FLOAT_ABI_HARD = 0
+	FORCE_GLES = 1
+	SINGLE_PREC_FLAGS = 1
+	CPUFLAGS += -march=armv8-a
+	CFLAGS += -mtune=cortex-a53 $(CPUFLAGS)
 	PLATFORM_EXT := unix
 	WITH_DYNAREC=arm64
 	HAVE_GENERIC_JIT = 0
@@ -805,7 +887,7 @@ else
 	TARGET := $(TARGET_NAME)_libretro.$(EXT)
 	LDFLAGS += -shared -static-libgcc -static-libstdc++ -Wl,--version-script=link.T -lwinmm -lgdi32
 	GL_LIB := -lopengl32
-	LIBS := -lws2_32
+	LIBS := -lws2_32 -liphlpapi
 	PLATFORM_EXT := win32
 	SINGLE_PREC_FLAGS=1
 	CC ?= gcc
@@ -921,8 +1003,6 @@ else
 	ifeq ($(HAVE_LTCG), 1)
 		CORE_DEFINES   += -flto
 	endif
-
-	CORE_DEFINES      += -DRELEASE
 endif
 
 ifeq ($(HAVE_GL3), 1)
@@ -930,7 +1010,7 @@ ifeq ($(HAVE_GL3), 1)
 	CORE_DEFINES += -DHAVE_GL3
 endif
 
-RZDCY_CFLAGS	+= $(CFLAGS) -c $(OPTFLAGS) -frename-registers -ffast-math -ftree-vectorize -fomit-frame-pointer 
+RZDCY_CFLAGS	+= $(CFLAGS) -c $(OPTFLAGS) -frename-registers -ftree-vectorize -fomit-frame-pointer 
 
 ifeq ($(WITH_DYNAREC), arm)
 	ifneq (,$(findstring odroid,$(platform)))
@@ -1001,7 +1081,7 @@ else
 	CXXFLAGS += -DTARGET_NO_OPENMP
 endif
 ifeq ($(platform), win)
-	LDFLAGS_END += -Wl,-Bstatic -lgmp -Wl,-Bstatic -lgomp -lwsock32
+	LDFLAGS_END += -Wl,-Bstatic -lgomp -lwsock32 -lws2_32 -liphlpapi
 endif
 	NEED_CXX11=1
 	NEED_PTHREAD=1
@@ -1037,7 +1117,7 @@ ifeq ($(NEED_CXX11), 1)
 endif
 
 ifeq ($(HAVE_CHD),1)
-CORE_DEFINES += -DFLAC__HAS_OGG=0 -DFLAC__NO_DLL -DHAVE_LROUND -DHAVE_STDINT_H -DHAVE_STDLIB_H -DHAVE_SYS_PARAM_H -D_7ZIP_ST -DUSE_FLAC -DUSE_LZMA
+CORE_DEFINES += -DHAVE_STDINT_H -DHAVE_STDLIB_H -DHAVE_SYS_PARAM_H -D_7ZIP_ST -DUSE_FLAC -DUSE_LZMA
 endif
 
 RZDCY_CFLAGS   += $(CORE_DEFINES)
@@ -1046,14 +1126,14 @@ CFLAGS         += $(CORE_DEFINES)
 CXXFLAGS       += $(CORE_DEFINES)
 
 CFLAGS   += $(OPTFLAGS) -c
-CFLAGS   += -fno-strict-aliasing -ffast-math
+CFLAGS   += -fno-strict-aliasing
 CXXFLAGS += -fno-rtti -fpermissive -fno-operator-names
 LIBS     += -lm 
 
 PREFIX        ?= /usr/local
 
 ifneq (,$(findstring arm, $(ARCH)))
-	CC_AS    = ${CC_PREFIX}gcc #The ngen_arm.S must be compiled with gcc, not as
+	CC_AS    = ${CC_PREFIX}${CC} #The ngen_arm.S must be compiled with gcc, not as
 	ASFLAGS  += $(CFLAGS)
 endif
 

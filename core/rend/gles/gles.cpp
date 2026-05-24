@@ -79,9 +79,7 @@ void main()
 	vtx_base = in_base;
 	vtx_offs = in_offs;
 	vtx_uv = in_uv;
-	highp vec4 vpos = in_pos;
-	
-	vpos = normal_matrix * vpos;
+	highp vec4 vpos = normal_matrix * in_pos;
 	vpos.w = 1.0 / vpos.z;
 #if TARGET_GL != GLES2
    vpos.z = vpos.w;
@@ -687,6 +685,8 @@ static void gl_term(void)
 	fbTextureId = 0;
 	glDeleteTextures(1, &fogTextureId);
 	fogTextureId = 0;
+	glcache.DeleteTextures(1, &paletteTextureId);
+	paletteTextureId = 0;
 
 	gl_delete_shaders();
 }
@@ -1065,11 +1065,9 @@ void rend_set_fb_scale(float x, float y)
 	fb_scale_y = y;
 }
 
-void co_dc_yield(void);
-
 bool ProcessFrame(TA_context* ctx)
 {
-   ctx->rend_inuse.Lock();
+   ctx->rend_inuse.lock();
 
    if (KillTex)
    {
@@ -1080,7 +1078,7 @@ bool ProcessFrame(TA_context* ctx)
    if (ctx->rend.isRenderFramebuffer)
 	{
 		RenderFramebuffer();
-		ctx->rend_inuse.Unlock();
+		ctx->rend_inuse.unlock();
 	}
 	else
 	{
@@ -1115,6 +1113,7 @@ struct glesrend : Renderer
       }
 #endif
       fog_needs_update = true;
+      palette_updated = true;
       TexCache.Clear();
 
       if (settings.rend.PowerVR2Filter)
@@ -1147,11 +1146,6 @@ struct glesrend : Renderer
 #endif
     	  glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       return ret;
-   }
-
-	void Present() override
-   {
-      co_dc_yield();
    }
 
 	virtual u64 GetTexture(TSP tsp, TCW tcw) override {
